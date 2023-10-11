@@ -1,69 +1,81 @@
 import axios, { AxiosError } from 'axios'
-import { parseCookies, setCookie, destroyCookie } from 'nookies'
-
-let cookies = parseCookies()
-let isRefreshing = false
-let failedRequestQueue = []
-
-export const api = axios.create({
-  baseURL: 'http://localhost:3333',
-  headers: {
-    Authorization: `Bearer ${cookies['nextauth.token']}`,
-  },
-})
+import { parseCookies, setCookie } from 'nookies'
+import { signOut } from '../context/auth-context'
 
 type ResponseError = { code: string }
 
-api.interceptors.response.use(
-  (response) => response,
+let isRefreshing = false
+let failedRequestQueue = []
 
-  (error: AxiosError<ResponseError>) => {
-    if (error.response.status === 401) {
-      if (error.response.data?.code === 'token.expired') {
-        cookies = parseCookies()
-        const { 'nextauth.refreshToken': refreshToken } = cookies
+export function setupAPIClient(ctx = undefined) {
+  let cookies = parseCookies(ctx)
 
-        const originalConfig = error.config
+  const api = axios.create({
+    baseURL: 'http://localhost:3333',
+    headers: {
+      Authorization: `Bearer ${cookies['nextauth.token']}`,
+    },
+  })
 
-        if (!isRefreshing) {
-          isRefreshing = true
+  api.interceptors.response.use(
+    (response) => response,
 
-          api
-            .post('/refresh', { refreshToken })
-            .then((response) => {
-              const { token } = response.data
+    (error: AxiosError<ResponseError>) => {
+      if (error.response.status === 401) {
+        if (error.response.data?.code === 'token.expired') {
+          cookies = parseCookies(ctx)
+          const { 'nextauth.refreshToken': refreshToken } = cookies
 
-              setCookie(undefined, 'nextauth.token', token)
-              api.defaults.headers.Authorization = `Bearer ${token}`
+          const originalConfig = error.config
 
-              failedRequestQueue.forEach((request) => request.onSuccess(token))
-              failedRequestQueue = []
+          if (!isRefreshing) {
+            isRefreshing = true
+
+            api
+              .post('/refresh', { refreshToken })
+              .then((response) => {
+                const { token } = response.data
+
+                setCookie(ctx, 'nextauth.token', token)
+                api.defaults.headers.Authorization = `Bearer ${token}`
+
+                failedRequestQueue.forEach((request) =>
+                  request.onSuccess(token),
+                )
+                failedRequestQueue = []
+              })
+              .catch((error) => {
+                failedRequestQueue.forEach((request) =>
+                  request.onFailure(error),
+                )
+                failedRequestQueue = []
+
+                if (typeof window !== 'undefined') signOut()
+              })
+              .finally(() => {
+                isRefreshing = false
+              })
+          }
+
+          return new Promise((resolve, reject) => {
+            failedRequestQueue.push({
+              onSuccess: (token: string) => {
+                originalConfig.headers.Authorization = `Bearer ${token}`
+                resolve(api(originalConfig))
+              },
+              onFailure: (error: AxiosError) => {
+                reject(error)
+              },
             })
-            .catch((error) => {
-              failedRequestQueue.forEach((request) => request.onFailure(error))
-              failedRequestQueue = []
-            })
-            .finally(() => {
-              isRefreshing = false
-            })
-        }
-
-        return new Promise((resolve, reject) => {
-          failedRequestQueue.push({
-            onSuccess: (token: string) => {
-              originalConfig.headers.Authorization = `Bearer ${token}`
-              resolve(api(originalConfig))
-            },
-            onFailure: (error: AxiosError) => {
-              reject(error)
-            },
           })
-        })
-      } else {
-        destroyCookie(undefined, 'nextauth.token')
-        destroyCookie(undefined, 'nextauth.refreshToken')
-        // TODO: signout
+        } else {
+          if (typeof window !== 'undefined') signOut()
+        }
       }
-    }
-  },
-)
+    },
+  )
+
+  return api
+}
+
+export const api = setupAPIClient()

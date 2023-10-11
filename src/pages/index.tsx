@@ -1,7 +1,7 @@
 import Head from 'next/head'
 import Image from 'next/image'
 import styles from '../styles/Home.module.css'
-import { Form } from './form'
+import { Form } from '../components/form'
 import { withSSRGuest } from '../utils/withSSRGuest'
 
 export default function Home() {

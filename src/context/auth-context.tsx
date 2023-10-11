@@ -6,8 +6,8 @@ import {
   useState,
 } from 'react'
 import { api } from '../service/api'
-import { useRouter } from 'next/router'
-import { parseCookies, setCookie } from 'nookies'
+import { redirect, useRouter } from 'next/navigation'
+import { destroyCookie, parseCookies, setCookie } from 'nookies'
 
 type SignInCredentials = {
   email: string
@@ -27,6 +27,12 @@ type AuthContextProps = {
 }
 
 const AuthContext = createContext({} as AuthContextProps)
+
+export function signOut() {
+  destroyCookie(undefined, 'nextauth.token')
+  destroyCookie(undefined, 'nextauth.refreshToken')
+  redirect('/')
+}
 
 type AuthProviderProps = { children: ReactNode }
 

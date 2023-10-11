@@ -2,6 +2,7 @@ import Head from 'next/head'
 import Image from 'next/image'
 import styles from '../styles/Home.module.css'
 import { Form } from './form'
+import { withSSRGuest } from '../utils/withSSRGuest'
 
 export default function Home() {
   return (
@@ -42,3 +43,7 @@ export default function Home() {
     </div>
   )
 }
+
+export const getServerSideProps = withSSRGuest(async () => ({
+  props: {},
+}))

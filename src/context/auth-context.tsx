@@ -1,12 +1,13 @@
 import {
   ReactNode,
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
 } from 'react'
 import { api } from '../service/api'
-import { redirect, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { destroyCookie, parseCookies, setCookie } from 'nookies'
 
 type SignInCredentials = {
@@ -22,16 +23,20 @@ interface IUser {
 
 type AuthContextProps = {
   signIn(credentials: SignInCredentials): Promise<void>
+  signOut(): void
   isAuthenticated: boolean
   user: IUser | null
 }
 
 const AuthContext = createContext({} as AuthContextProps)
 
+let authChannel: BroadcastChannel
+
 export function signOut() {
   destroyCookie(undefined, 'nextauth.token')
   destroyCookie(undefined, 'nextauth.refreshToken')
-  redirect('/')
+  authChannel.postMessage('signOut')
+  window.location.href = 'http://localhost:3000/'
 }
 
 type AuthProviderProps = { children: ReactNode }
@@ -42,16 +47,33 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<IUser | null>(null)
   const isAuthenticated = !!user
 
-  useEffect(() => {
+  function handleAuthenticate() {
     const { 'nextauth.token': token } = parseCookies()
+    if (!token) return
 
-    if (token) {
-      api.get('/me').then((response) => {
-        const { permissions, roles, email } = response.data
-        setUser({ email, permissions, roles })
-      })
+    api.get('/me').then((response) => {
+      const { permissions, roles, email } = response.data
+      setUser({ email, permissions, roles })
+    })
+  }
+
+  const handleAuthChannel = useCallback(() => {
+    authChannel = new BroadcastChannel('auth')
+
+    authChannel.onmessage = (message) => {
+      if (message.data === 'signOut') {
+        signOut()
+      }
+      // if (message.data === 'signIn') {
+      //   router.push('/dashboard')
+      // }
     }
   }, [])
+
+  useEffect(() => {
+    handleAuthenticate()
+    handleAuthChannel()
+  }, [handleAuthChannel])
 
   async function signIn(credentials: SignInCredentials) {
     try {
@@ -71,7 +93,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   return (
-    <AuthContext.Provider value={{ signIn, isAuthenticated, user }}>
+    <AuthContext.Provider value={{ signIn, signOut, isAuthenticated, user }}>
       {children}
     </AuthContext.Provider>
   )
